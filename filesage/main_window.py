@@ -1,12 +1,12 @@
-# python
-# filesage/main_window.py
+# main_window.py
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QLabel
+from PySide6.QtGui import QGuiApplication
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("filesage")
-        self.resize(400, 300)  # default window size
+        self.resize(800, 600)  # default window size
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -27,3 +27,12 @@ class MainWindow(QMainWindow):
         tabs.addTab(manip_tab, "File MANIPULATION")
 
         self.setCentralWidget(central)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen:
+            center = screen.availableGeometry().center()
+            frame = self.frameGeometry()
+            frame.moveCenter(center)
+            self.move(frame.topLeft())
