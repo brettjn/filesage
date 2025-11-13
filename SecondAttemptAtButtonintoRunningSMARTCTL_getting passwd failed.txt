@@ -24,9 +24,8 @@ class SmartctlWorker(QThread):
     error = Signal(str)
 
     def run(self) -> None:
-        script_path = None
         try:
-            # choose elevation method
+            # Choose elevation method: none (if already root), pkexec, or sudo
             if os.geteuid() == 0:
                 elev = []
             elif shutil.which("pkexec"):
@@ -34,49 +33,50 @@ class SmartctlWorker(QThread):
             else:
                 elev = ["sudo"]
 
-            shell_script = (
-                "#!/bin/sh\n"
-                "set -e\n"
-                "smartctl --scan | awk '/^\\/dev/{print $1}' | while read dev; do\n"
-                "  printf '%s\\n' '============================================================'\n"
-                "  printf '%s\\n' \"$dev\"\n"
-                "  printf '%s\\n' '============================================================'\n"
-                "  smartctl -a \"$dev\" 2>&1\n"
-                "done\n"
+            # Run smartctl --scan to find devices
+            proc = subprocess.run(
+                elev + ["smartctl", "--scan"],
+                capture_output=True,
+                text=True,
             )
+            if proc.returncode != 0 and not proc.stdout:
+                # no useful output
+                raise RuntimeError(proc.stderr.strip() or "smartctl --scan failed")
 
-            import tempfile
-            with tempfile.NamedTemporaryFile("w", delete=False, prefix="filesage_smartctl_", suffix=".sh") as tf:
-                tf.write(shell_script)
-                script_path = tf.name
+            drives: Set[str] = set()
+            for line in proc.stdout.splitlines():
+                parts = line.split()
+                # smartctl --scan lines usually start with a device path like /dev/sda
+                for p in parts:
+                    if p.startswith("/dev/"):
+                        drives.add(p)
+                        break
 
-            os.chmod(script_path, 0o700)
+            if not drives:
+                raise RuntimeError("No block devices found by smartctl --scan")
 
-            # Run the script once under elevation so the user authenticates a single time
-            proc = subprocess.run(elev + [script_path], capture_output=True, text=True)
-            output = (proc.stdout or "") + (proc.stderr or "")
+            outputs = []
+            for drive in sorted(drives):
+                header = f"{'='*60}\n{drive}\n{'='*60}\n"
+                cmd = elev + ["smartctl", "-a", drive]
+                try:
+                    r = subprocess.run(cmd, capture_output=True, text=True)
+                    out = (r.stdout or "") + (r.stderr or "")
+                except Exception as e:
+                    out = f"Failed to run {' '.join(cmd)}: {e}"
+                outputs.append(header + out)
 
-            if proc.returncode != 0 and not output:
-                raise RuntimeError("elevated smartctl run failed")
-
-            # emit result (custom signal)
-            self.finished.emit(output)
+            self.finished.emit("\n".join(outputs))
 
         except Exception as exc:
             self.error.emit(str(exc))
 
-        finally:
-            if script_path:
-                try:
-                    os.remove(script_path)
-                except Exception:
-                    pass
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("filesage")
-        self.resize(800, 600)
+        self.resize(800, 600)  # default window size
 
         # Periodic timer to keep Python signal handling responsive.
         self.timer = QTimer()
@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         layout.addWidget(tabs, 3)
 
+        # File INFO tab
         info_tab = QWidget()
         info_layout = QVBoxLayout(info_tab)
         self.scan_button = QPushButton("Scan Drive")
@@ -103,11 +104,13 @@ class MainWindow(QMainWindow):
         info_layout.addStretch()
         tabs.addTab(info_tab, "File INFO")
 
+        # File MANIPULATION tab
         manip_tab = QWidget()
         manip_layout = QVBoxLayout(manip_tab)
         manip_layout.addWidget(QLabel("File MANIPULATION"))
         tabs.addTab(manip_tab, "File MANIPULATION")
 
+        # Log / status area
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setPlaceholderText("Status and log messages...")
@@ -115,6 +118,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
+        # Setup CTRL+C handler (must be set from the main thread)
         signal.signal(signal.SIGINT, self._handle_sigint)
 
         self.worker: SmartctlWorker | None = None
@@ -126,9 +130,6 @@ class MainWindow(QMainWindow):
         self.worker = SmartctlWorker()
         self.worker.finished.connect(self.on_scan_complete)
         self.worker.error.connect(self.on_scan_error)
-        # cleanup after either finished or error
-        self.worker.finished.connect(self._cleanup_worker)
-        self.worker.error.connect(self._cleanup_worker)
         self.worker.start()
 
     def on_scan_complete(self, output: str) -> None:
@@ -136,44 +137,12 @@ class MainWindow(QMainWindow):
         self.smartctl_result.setPlainText(output)
         self.smartctl_result.setVisible(True)
         self.log("Drive scan completed.")
+        self.worker = None
 
     def on_scan_error(self, error: str) -> None:
         self.log(f"Scan error: {error}")
         self.scan_button.setEnabled(True)
-
-    def _cleanup_worker(self, *_args) -> None:
-        # ensure thread has stopped and then delete the QObject
-        if not self.worker:
-            return
-        if self.worker.isRunning():
-            # try to wait a short time for graceful stop
-            self.worker.wait(500)
-        try:
-            self.worker.deleteLater()
-        finally:
-            self.worker = None
-
-    def closeEvent(self, event) -> None:
-        # Ensure worker is stopped before window is destroyed to avoid
-        # "QThread: Destroyed while thread '' is still running"
-        if self.worker and self.worker.isRunning():
-            self.log("Stopping worker thread...")
-            # best-effort safe stop: try terminate (subprocess.run is blocking)
-            try:
-                self.worker.terminate()
-            except Exception:
-                pass
-            # wait up to 3s, then block until finished if necessary
-            if not self.worker.wait(3000):
-                self.log("Worker did not stop in time; waiting until it finishes...")
-                self.worker.wait()
-            # cleanup
-            try:
-                self.worker.deleteLater()
-            except Exception:
-                pass
-            self.worker = None
-        super().closeEvent(event)
+        self.worker = None
 
     def log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
@@ -190,3 +159,4 @@ class MainWindow(QMainWindow):
             frame = self.frameGeometry()
             frame.moveCenter(center)
             self.move(frame.topLeft())
+
