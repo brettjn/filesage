@@ -1,0 +1,5 @@
+pytest
+# GUI dependencies (optional):
+# PyQt5
+# or
+# PySide6

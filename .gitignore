@@ -5,7 +5,7 @@ dist/
 build/
 .idea/
 filesage/
-tests/
 pyproject.toml
 notes/
 main.py
+tests.pycharm/
