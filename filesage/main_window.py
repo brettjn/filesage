@@ -36,12 +36,13 @@ class SmartctlWorker(QThread):
 
             shell_script = (
                 "#!/bin/sh\n"
-                "set -e\n"
+                # removed `set -e` so one failing device doesn't abort the whole script
                 "smartctl --scan | awk '/^\\/dev/{print $1}' | while read dev; do\n"
                 "  printf '%s\\n' '============================================================'\n"
                 "  printf '%s\\n' \"$dev\"\n"
                 "  printf '%s\\n' '============================================================'\n"
-                "  smartctl -a \"$dev\" 2>&1\n"
+                # run smartctl; if it fails, print an error but continue with the next device
+                "  smartctl -a \"$dev\" 2>&1 || printf 'smartctl failed for %s\\n' \"$dev\" 1>&2\n"
                 "done\n"
             )
 
@@ -92,13 +93,14 @@ class MainWindow(QMainWindow):
         info_tab = QWidget()
         info_layout = QVBoxLayout(info_tab)
         self.scan_button = QPushButton("Scan Drive")
-        self.scan_button.clicked.connect(self.on_scan_drive)
         info_layout.addWidget(self.scan_button)
+        self.scan_button.clicked.connect(self.on_scan_drive)
 
         self.smartctl_result = QPlainTextEdit()
         self.smartctl_result.setReadOnly(True)
         self.smartctl_result.setVisible(False)
-        info_layout.addWidget(self.smartctl_result)
+        # make this widget take all remaining space in the tab
+        info_layout.addWidget(self.smartctl_result, 1)
 
         info_layout.addStretch()
         tabs.addTab(info_tab, "File INFO")

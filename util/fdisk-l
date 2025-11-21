@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+
+# fdisk-l: wrapper around fdisk that ensures -l is present and filters /dev/loop entries
+# Usage: fdisk-l [fdisk-args...]
+# It will append -l if not provided and then pipe sed to remove loop devices:
+#   fdisk [args] -l | sed -e '/^Disk \/dev\/loop/,+5d'
+
+# VERSION 0.1
+
+args=()
+has_l=0
+for a in "$@"; do
+  args+=("$a")
+  if [ "$a" = "-l" ]; then
+    has_l=1
+  fi
+done
+
+if [ "$has_l" -eq 0 ]; then
+  args+=("-l")
+fi
+
+fdisk_cmd=$(command -v fdisk || true)
+if [ -z "$fdisk_cmd" ]; then
+  echo "fdisk not found in PATH" >&2
+  exit 127
+fi
+
+# Run fdisk and filter loop device sections
+# Use pipefail so we return fdisk's exit code on failure
+"$fdisk_cmd" "${args[@]}" | sed -e '/^Disk \/dev\/loop/,+5d'

@@ -1,5 +1,9 @@
 # Remember to source .venv/bin/activate
 
+# Copilot switched to using Claude Haiku 4.5 - 1x
+# this was after creating a basic app.  When I asked it for more it said I needed to activate the model at github which I looked around and was able to.
+# I got a little bit of good work out of it but now I guess I am hitting a high use period.  Saying try again later or switch models.
+#
 
 #Copilot Instructions
 
