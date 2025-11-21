@@ -1,9 +1,6 @@
 
 # License text shown in About dialog detailed view
-LICENSE_TEXT = """
-
-
-    fsgui - Archival tool for scanning and coalescing content distinct files 
+LICENSE_TEXT = """    fsgui - Archival tool for scanning and coalescing content distinct files 
     Copyright (C) 2025  Brett J. Nelson
 
     This program is free software: you can redistribute it and/or modify

@@ -8,9 +8,9 @@ Features:
 - Compare the two selected runs: report counts of total files, files present in both paths, same content-hash matches, and differing files.
 - Show files that are present in the first scan but not in the second in a tree view by path.
 
-Dependencies: PyQt5 or PySide6 (the code will attempt to import PyQt5 first and fall back to PySide6).
+Dependencies: PyQt5
 
-Run: python fsgui.py
+Run: python3 fsgui.py
 """
 import os
 import sys
@@ -28,10 +28,10 @@ import errno
 from lib.LICENSE_fsgui import LICENSE_TEXT
 
 # semantic version for the GUI tool
-VERSION = "0.39"
+VERSION = "0.41"
 DB_VERSION = "1.1"
 
-VERSION_NOTE = """DB Only Hardlink Dry Run"""
+VERSION_NOTE = """Change order of tabs"""
 
 
 
@@ -1171,7 +1171,6 @@ class FSCompareGUI(QtWidgets.QMainWindow):
             except Exception:
                 pass
             self.tabs = QtWidgets.QTabWidget()
-            self.tabs.addTab(self.transfer_page, "TRANSFER")
 
             # SCAN page: controls to run fscan.py and a live output pane
             scan_page = QtWidgets.QWidget()
@@ -1311,6 +1310,12 @@ QGroupBox#scanOutputGroup QPlainTextEdit {
             except Exception:
                 pass
             self.tabs.addTab(scan_page, "SCAN")
+            # Make SCAN the first tab by adding TRANSFER after SCAN so SCAN occupies index 0.
+            try:
+                self.tabs.addTab(self.transfer_page, "TRANSFER")
+            except Exception:
+                # If adding the TRANSFER page fails for some reason, continue without crashing.
+                pass
 
             # RESUME SCAN page: select a DB and an unfinished scan_run to resume
             resume_page = QtWidgets.QWidget()
@@ -1681,7 +1686,7 @@ QGroupBox#hardlinkOutputGroup {
             cur.execute("SELECT id, started_at, root FROM scan_runs ORDER BY id")
             rows = cur.fetchall()
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "DB read error", f"Failed to read scan_runs from {path}: {e}")
+            #QtWidgets.QMessageBox.warning(self, "DB read error", f"Failed to read scan_runs from {path}: {e}")
             conn.close()
             return
         if not rows:
